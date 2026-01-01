@@ -1,49 +1,39 @@
-"""
-Example: Using MCP tools with external services (Jira and Slack) via LangGraph
-Demonstrates HTTP transport for external API integrations with LangGraph StateGraph
-"""
 import asyncio
 import os
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph import StateGraph, MessagesState, START
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain.chat_models import init_chat_model
+from langchain_openai import AzureChatOpenAI
+from dotenv import load_dotenv
+from datetime import datetime
 
+load_dotenv()
+
+Google_Calendar_MCP_URL = os.getenv("GOOGLE_CALENDAR_MCP_URL")
 
 async def main():
     """
-    This example demonstrates connecting to external service MCP servers using LangGraph.
-    
-    These servers use HTTP transport because:
-    1. They wrap external REST APIs (Jira, Slack)
-    2. Multiple clients may need to connect
-    3. They run as standalone services
-    4. Production deployments require HTTP
-    
-    Before running:
-    1. Start Jira server: python servers/jira_server.py (runs on port 8003)
-    2. Start Slack server: python servers/slack_server.py (runs on port 8002)
-    3. Set environment variables:
-       - JIRA_SERVER, JIRA_EMAIL, JIRA_API_TOKEN (for Jira)
-       - SLACK_BOT_TOKEN (for Slack)
+    Example: Using Zapier MCP tools via LangGraph.
+
+    This connects to a Zapier-hosted MCP server over HTTP
     """
-    
+
     # Initialize chat model
-    model = init_chat_model("openai:gpt-4o")
-    
+    model = AzureChatOpenAI(
+        model=os.getenv("AZURE_OPENAI_MODEL"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+    )
+
+    # Only Zapier MCP server configured
     client = MultiServerMCPClient(
         {
-            "jira": {
-                "url": "http://localhost:8003/mcp",
-                "transport": "http",
-            },
-            "slack": {
-                "url": "http://localhost:8002/mcp",
+            "zapier": {
+                "url": Google_Calendar_MCP_URL,
                 "transport": "http",
             }
         }
     )
-    
+
     tools = await client.get_tools()
 
     def call_model(state: MessagesState):
@@ -55,51 +45,26 @@ async def main():
     builder.add_node("call_model", call_model)
     builder.add_node("tools", ToolNode(tools))
     builder.add_edge(START, "call_model")
-    builder.add_conditional_edges(
-        "call_model",
-        tools_condition,
-    )
+    builder.add_conditional_edges("call_model", tools_condition)
     builder.add_edge("tools", "call_model")
-    
+
     graph = builder.compile()
-    
-    # Test Jira operations
-    print("Testing Jira operations with LangGraph...")
-    print("Note: These are mock responses. Configure Jira credentials for real usage.")
-    jira_response = await graph.ainvoke({
-        "messages": [("user", "Create a Jira issue in project PROJ with summary 'Fix login bug'")]
-    })
-    print("Jira Response:", jira_response)
-    print()
-    
-    # Test Slack operations
-    print("Testing Slack operations with LangGraph...")
-    print("Note: These are mock responses. Configure Slack token for real usage.")
-    slack_response = await graph.ainvoke({
-        "messages": [("user", "Send a message to #general channel saying 'Hello from MCP!'")]
-    })
-    print("Slack Response:", slack_response)
+
+    # Example: ask the model to use a Zapier tool
+    print("Testing Zapier MCP tools with LangGraph...")
+    response = await graph.ainvoke({"messages": [("user", f"Did I get an interview email in the past 2 weeks? current date is {datetime.now().strftime('%Y-%m-%d')}")]})
+    print("Response:", response)
+
+    print(response.get("messages", [])[-1].content)
 
 
 if __name__ == "__main__":
-    # Make sure OPENAI_API_KEY is set
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY environment variable not set")
-        exit(1)
-    
     print("=" * 60)
-    print("External Services MCP Example")
+    print("Zapier MCP Example")
     print("=" * 60)
     print()
-    print("This example demonstrates HTTP transport for external services.")
-    print()
-    print("Prerequisites:")
-    print("1. Start Jira server: python servers/jira_server.py")
-    print("2. Start Slack server: python servers/slack_server.py")
-    print("3. Optional: Set JIRA_* and SLACK_* environment variables")
+    print("This example demonstrates HTTP transport for a Zapier MCP server.")
     print()
     print("=" * 60)
     print()
-    
     asyncio.run(main())
-
